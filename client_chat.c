@@ -8,49 +8,51 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netdb.h>
-#include <pthread.h>
 
 #define BUFSIZE 256
 
-void send_receive(int i, int sockfd, char username[100]) {
-  char send_buf[BUFSIZE];
-  char recv_buf[BUFSIZE];
-  int recvByte;
+void send_receive_to_from_server(int i, int sockfd, char username[100]) {
+  char message_sent[BUFSIZE]="";
+  char message_received[BUFSIZE]="";
+  int nBytes_received;
 
-  if(i==0)
+  if(i==0) // catre server
   {
-    fgets(send_buf,BUFSIZE,stdin);
-    if (strcmp(send_buf , "bye\n") == 0)
+    fgets(message_sent,BUFSIZE,stdin);
+    //daca clientul tasteaza bye, va trimite mesajul corespunzator serverului si se va incheia conexiunea
+    if (strcmp(message_sent , "bye\n") == 0)
     {
       send(sockfd,username,strlen(username),0);
       send(sockfd, ":", 1, 0);
-      send(sockfd, send_buf, strlen(send_buf), 0);
+      send(sockfd, message_sent, strlen(message_sent), 0);
       exit(0);
     }
-  else{
+    //mesajul difera de bye => se trimite doar mesajul corespunzator serverului
+    else
+    {
         send(sockfd,username,strlen(username),0);
         send(sockfd, ":", 1, 0);
-        send(sockfd, send_buf, strlen(send_buf), 0);
+        send(sockfd, message_sent, strlen(message_sent), 0);
     }
   }
-  else
+  else // de la server
   {
-    recvByte= recv(sockfd, recv_buf, BUFSIZE, 0);
-    if(recvByte==0)
+    nBytes_received= recv(sockfd, message_received, BUFSIZE, 0);
+    if(nBytes_received==0) // daca nu primeste nimic de la server => serverul a picat => clientul isi incheie conexiunea 
     {
       printf("Server is down, reconnect later\n");
       exit(0);
     }
-    else
+    else //serverul trimite mesajul primit de la un user tuturor clientilor conectati 
     {    
-        recv_buf[recvByte]='\0';
-        printf("--%s",recv_buf);
+        message_received[nBytes_received]='\0';
+        printf("--%s",message_received); // fiecarui client ii va aparea in fereastra un mesaj de tipul "--USER:MESSAGE"
         fflush(stdout);
     }
   }
 }
 
-void connect_request(int *sockfd, struct sockaddr_in *server_addr, int portNo, char addr[],char username[], char password[])
+void connecting_client_to_server(int *sockfd, struct sockaddr_in *server_addr, int portNo, char addr[],char username[], char password[])
  {
   int n;
   char buffer[256]="";
@@ -69,9 +71,11 @@ void connect_request(int *sockfd, struct sockaddr_in *server_addr, int portNo, c
     exit(1);
   }
 
-  //printf("===%s===\n",username);
+  //clientul trimite username-ul si parola prin care a incercat sa se conecteze
   n=send(*sockfd, username, strlen(username), 0);
   n=send(*sockfd, password, strlen(password), 0);
+
+  //primeste de la server un mesaj corespunzator daca logarea nu s-a facut cu succes si se va incheia conexiunea cu serverul
   n=recv(*sockfd,buffer,255,0);
   if( (strncmp(buffer,"Wrong password",strlen("Wrong password"))==0) ||
     (strncmp(buffer,"Connected already!",strlen("Connected already!"))==0))
@@ -90,13 +94,14 @@ int main (int argc, char *argv[]){
 
   if (argc<5) 
   {
-      fprintf (stderr,"Usage %s Host-Name Port UserName Password\n", argv[0]);
+      fprintf (stderr,"Usage %s Host-Name Port Username Password\n", argv[0]);
       exit(0);
   }
    
   portNo=atoi(argv[2]);
 
-  connect_request(&sockfd, &serv_addr,portNo,argv[1],argv[3],argv[4]);
+  //clientul incearca sa se conecteze la server prin hostname, port username si parola
+  connecting_client_to_server(&sockfd, &serv_addr,portNo,argv[1],argv[3],argv[4]);
 
   FD_ZERO(&master);
   FD_ZERO(&read_fds);
@@ -105,7 +110,7 @@ int main (int argc, char *argv[]){
   fdmax = sockfd;
 
   while(1) {
-    fflush(stdout);
+     fflush(stdout);
      read_fds = master;
      if(select(fdmax+1, &read_fds, NULL, NULL, NULL) == -1)
      {
@@ -115,7 +120,7 @@ int main (int argc, char *argv[]){
 
     for(i=0; i <= fdmax; i++ )
       if(FD_ISSET(i, &read_fds))
-        send_receive(i, sockfd, argv[3]);
+        send_receive_to_from_server(i, sockfd, argv[3]);
     }
 
   close(sockfd); 
